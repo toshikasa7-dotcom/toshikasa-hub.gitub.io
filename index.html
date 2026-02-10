@@ -85,12 +85,48 @@
         const App = () => {
             // State
             const [view, setView] = useState("HOME"); // HOME, LOGIN, REGISTER, PROFILE, CHECKOUT, SUCCESS
-            const [user, setUser] = useState(null); // null = Guest
+            
+            // 1. Initialize user from localStorage (Persistence)
+            const [user, setUser] = useState(() => {
+                const savedUser = localStorage.getItem('gaming_currentUser');
+                return savedUser ? JSON.parse(savedUser) : null;
+            });
+
+            // 2. Mock Database in localStorage
+            const [userDB, setUserDB] = useState(() => {
+                const savedDB = localStorage.getItem('gaming_userDB');
+                return savedDB ? JSON.parse(savedDB) : [];
+            });
+
             const [cart, setCart] = useState([]);
             const [isCartOpen, setIsCartOpen] = useState(false);
             const [searchTerm, setSearchTerm] = useState("");
             const [notification, setNotification] = useState(null);
-            const [orders, setOrders] = useState([]); // Store order history
+            
+            // Order History Persistence
+            const [orders, setOrders] = useState(() => {
+                const savedOrders = localStorage.getItem('gaming_orders');
+                return savedOrders ? JSON.parse(savedOrders) : [];
+            });
+
+            // Effect to save user state changes
+            useEffect(() => {
+                if (user) {
+                    localStorage.setItem('gaming_currentUser', JSON.stringify(user));
+                } else {
+                    localStorage.removeItem('gaming_currentUser');
+                }
+            }, [user]);
+
+            // Effect to save DB changes
+            useEffect(() => {
+                localStorage.setItem('gaming_userDB', JSON.stringify(userDB));
+            }, [userDB]);
+
+            // Effect to save Orders
+            useEffect(() => {
+                localStorage.setItem('gaming_orders', JSON.stringify(orders));
+            }, [orders]);
 
             // Derived State
             const totalAmount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
@@ -130,6 +166,7 @@
                     items: [...cart],
                     total: totalAmount,
                     status: "กำลังจัดส่ง",
+                    customerEmail: user.email, // Link order to user
                     ...orderDetails
                 };
                 setOrders([newOrder, ...orders]);
@@ -137,7 +174,10 @@
                 setView("SUCCESS");
             };
 
-            // --- Sub-Components (Inline for single file) ---
+            // Filter orders for current user
+            const userOrders = orders.filter(o => user && o.customerEmail === user.email);
+
+            // --- Sub-Components ---
 
             // 1. Navbar
             const Navbar = () => (
@@ -249,11 +289,30 @@
             const LoginView = () => {
                 const handleLogin = (e) => {
                     e.preventDefault();
-                    // Mock Login
-                    setUser({ name: "Admin Gamer", email: "admin@gaming.com" });
-                    setView("HOME");
-                    showNotification("ยินดีต้อนรับกลับ!");
+                    const email = e.target.email.value;
+                    const password = e.target.password.value;
+
+                    // 1. Check Demo Account
+                    if(email === "admin@gaming.com" && password === "1234") {
+                         const demoUser = { name: "Admin Gamer", email: "admin@gaming.com" };
+                         setUser(demoUser);
+                         setView("HOME");
+                         showNotification("ยินดีต้อนรับ Admin (Demo Mode)!");
+                         return;
+                    }
+
+                    // 2. Check Mock DB
+                    const foundUser = userDB.find(u => u.email === email && u.password === password);
+                    
+                    if (foundUser) {
+                        setUser(foundUser);
+                        setView("HOME");
+                        showNotification(`ยินดีต้อนรับคุณ ${foundUser.name}`);
+                    } else {
+                        alert("อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+                    }
                 };
+
                 return (
                     <div className="min-h-[80vh] flex items-center justify-center p-4 fade-in">
                         <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-700">
@@ -261,14 +320,21 @@
                             <form onSubmit={handleLogin} className="space-y-4">
                                 <div>
                                     <label className="block text-sm text-gray-400 mb-1">อีเมล</label>
-                                    <input type="email" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-purple-500 focus:outline-none" placeholder="example@email.com" />
+                                    <input name="email" type="email" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-purple-500 focus:outline-none" placeholder="example@email.com" />
                                 </div>
                                 <div>
                                     <label className="block text-sm text-gray-400 mb-1">รหัสผ่าน</label>
-                                    <input type="password" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-purple-500 focus:outline-none" placeholder="••••••••" />
+                                    <input name="password" type="password" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-purple-500 focus:outline-none" placeholder="••••••••" />
                                 </div>
                                 <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition-all">เข้าสู่ระบบ</button>
                             </form>
+                            
+                            <div className="mt-6 p-3 bg-slate-900 rounded border border-slate-700 text-xs text-gray-400">
+                                <p className="font-bold text-gray-300 mb-1">บัญชีทดสอบ (Demo):</p>
+                                <p>Email: admin@gaming.com</p>
+                                <p>Pass: 1234</p>
+                            </div>
+
                             <div className="mt-4 text-center text-sm text-gray-400">
                                 ยังไม่มีบัญชี? <span onClick={() => setView("REGISTER")} className="text-purple-400 cursor-pointer hover:underline">สมัครสมาชิก</span>
                             </div>
@@ -280,12 +346,26 @@
             const RegisterView = () => {
                 const handleRegister = (e) => {
                     e.preventDefault();
-                    // Mock Register
                     const name = e.target.name.value;
-                    setUser({ name: name, email: e.target.email.value });
+                    const email = e.target.email.value;
+                    const password = e.target.password.value;
+
+                    // Validation check
+                    if (userDB.find(u => u.email === email)) {
+                        alert("อีเมลนี้มีผู้ใช้งานแล้ว");
+                        return;
+                    }
+
+                    // Save new user
+                    const newUser = { name, email, password };
+                    setUserDB([...userDB, newUser]);
+                    
+                    // Auto login
+                    setUser(newUser);
                     setView("HOME");
                     showNotification("สมัครสมาชิกสำเร็จ!");
                 };
+
                 return (
                     <div className="min-h-[80vh] flex items-center justify-center p-4 fade-in">
                         <div className="bg-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-slate-700">
@@ -301,7 +381,7 @@
                                 </div>
                                 <div>
                                     <label className="block text-sm text-gray-400 mb-1">รหัสผ่าน</label>
-                                    <input type="password" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-purple-500 focus:outline-none" placeholder="••••••••" />
+                                    <input name="password" type="password" required className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:border-purple-500 focus:outline-none" placeholder="••••••••" />
                                 </div>
                                 <button type="submit" className="w-full bg-pink-600 hover:bg-pink-700 text-white font-bold py-3 rounded-lg transition-all">สมัครสมาชิก</button>
                             </form>
@@ -334,10 +414,10 @@
                         {/* Order History */}
                         <div className="md:col-span-2">
                             <h3 className="text-2xl font-bold mb-4 flex items-center gap-2">
-                                <i className="fa-solid fa-clock-rotate-left text-purple-500"></i> ประวัติการสั่งซื้อ
+                                <i className="fa-solid fa-clock-rotate-left text-purple-500"></i> ประวัติการสั่งซื้อของคุณ
                             </h3>
                             <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
-                                {orders.length === 0 ? (
+                                {userOrders.length === 0 ? (
                                     <div className="p-8 text-center text-gray-500">
                                         <p>ยังไม่มีรายการสั่งซื้อ</p>
                                         <button onClick={() => setView("HOME")} className="mt-4 text-purple-400 underline">ไปช้อปปิ้งกันเถอะ</button>
@@ -354,7 +434,7 @@
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-slate-700">
-                                                {orders.map(order => (
+                                                {userOrders.map(order => (
                                                     <tr key={order.id} className="hover:bg-slate-700/50">
                                                         <td className="p-4 font-mono text-sm">{order.id}</td>
                                                         <td className="p-4 text-sm text-gray-300">{order.date}</td>
